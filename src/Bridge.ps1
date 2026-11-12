@@ -1,5 +1,5 @@
 ﻿#requires -Version 5.1
-param([ValidateSet('status','launch')][string]$Action, [string]$ClientPath)
+param([ValidateSet('status','launch','close')][string]$Action, [string]$ClientPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -12,8 +12,10 @@ try {
  $root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'DualChatGPT\profiles'
  $message = '客户端已就绪。原窗口继续使用原有数据。'
  if ($Action -eq 'launch') { $message = Start-SecondWindow $root $client.Exe }
- $s = Get-LaunchState $root $client.Exe @(Get-DesktopProcesses)
- [ordered]@{ platform='Windows'; version=$client.Version; default=$s.Default; secondary=$s.Secondary; unknown=$s.Unknown; message=$message } | ConvertTo-Json -Compress
+ if ($Action -eq 'close') { $message = Close-SecondWindow $root $client.Exe }
+ $processes = @(Get-DesktopProcesses)
+ $s = Get-LaunchState $root $client.Exe $processes
+ [ordered]@{ platform='Windows'; version=$client.Version; default=$s.Default; secondary=$s.Secondary; secondaryVisible=(Get-SecondWindowVisible $root $processes); unknown=$s.Unknown; message=$message } | ConvertTo-Json -Compress
 } catch {
  [ordered]@{ error=$_.Exception.Message } | ConvertTo-Json -Compress
  exit 1

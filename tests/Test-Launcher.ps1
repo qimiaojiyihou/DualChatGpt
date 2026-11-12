@@ -18,6 +18,21 @@ $s=Get-LaunchState $root $exe @($other,$unreadable,$foreign)
 Check ($s.Unknown -eq 3) 'other profiles, unreadable commands and other executables remain unknown'
 $s=Get-LaunchState $root $exe @($secondary,$secondary)
 Check ($s.Secondary -eq 2) 'duplicate secondary processes are counted'
+$configRoot = Join-Path ([IO.Path]::GetTempPath()) ('dualchat-config-test-'+[Guid]::NewGuid().ToString('N'))
+$configPaths = Get-ProfilePaths $configRoot 'B'
+try {
+ foreach ($dir in @($configPaths.Base,$configPaths.Electron,$configPaths.Codex,$configPaths.Sqlite,$configPaths.Temp,$configPaths.Work)) { [void][IO.Directory]::CreateDirectory($dir) }
+ $configFile=Join-Path $configPaths.Codex 'config.toml'
+ $expected='cli_auth_credentials_store = "file"' + "`n" + 'sqlite_home = "' + $configPaths.Sqlite.Replace('\','/').Replace('"','\"') + '"' + "`n"
+ [IO.File]::WriteAllText($configFile,$expected + "`n[plugins.example]`nenabled = true`n")
+ Assert-ProfileConfig $configPaths
+ Check $true 'client-added plugin tables preserve isolation settings'
+ [IO.File]::WriteAllText($configFile,$expected + "`nsqlite_home = `"other`"`n")
+ $rejected=$false; try { Assert-ProfileConfig $configPaths } catch { $rejected=$true }
+ Check $rejected 'additional top-level settings are rejected'
+} finally {
+ if (Test-Path -LiteralPath $configRoot) { [IO.Directory]::Delete($configRoot,$true) }
+}
 foreach ($file in @(Get-ChildItem (Join-Path $PSScriptRoot '..\src') -File) + @(Get-Item (Join-Path $PSScriptRoot '..\DualChatGPT.ps1'))) {
  $tokens=$null;$errors=$null
  [void][Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)

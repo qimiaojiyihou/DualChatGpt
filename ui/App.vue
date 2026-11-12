@@ -8,11 +8,11 @@ const busy = ref(false); const error = ref(''); const notice = ref(''); const se
 const savedPath = ref(localStorage.getItem('clientPath') || ''); const draftPath = ref(savedPath.value);
 const clientPath = computed(() => savedPath.value.trim() || null);
 const runtime = '__TAURI_INTERNALS__' in window;
-async function operation(action: 'check_status' | 'launch_secondary', silent = false) {
+async function operation(action: 'check_status' | 'launch_secondary' | 'close_secondary', silent = false) {
   if (busy.value) return;
   if (!runtime) { error.value = '请在 DualChatGPT 桌面应用中使用此功能。'; return; }
   busy.value = true; if (!silent) { error.value = ''; notice.value = ''; }
-  try { const result = await invoke<Status>(action, { clientPath: clientPath.value }); status.value = result; error.value = ''; if (action === 'launch_secondary') notice.value = resultText(result); }
+  try { const result = await invoke<Status>(action, { clientPath: clientPath.value }); status.value = result; error.value = ''; if (action !== 'check_status') notice.value = resultText(result); }
   catch (e) { error.value = String(e); }
   finally { busy.value = false; }
 }
@@ -37,7 +37,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
       <div v-if="notice" class="banner success" role="status"><Check :size="17"/><div>{{ notice }}</div><button class="dismiss" aria-label="关闭提示" @click="notice = ''"><X :size="16"/></button></div>
       <div class="account-grid">
         <article class="account-card original"><div class="card-top"><div class="avatar avatar-original"><span>✦</span></div><span class="badge" :class="{ online: status?.default === 1 }"><i></i>{{ status ? stateLabel(status.default) : '等待检查' }}</span></div><div class="card-index">01 / ORIGINAL</div><h3>原账号窗口</h3><p>熟悉的账号与原有聊天，<br/>都在这里。</p><div class="card-foot"><span class="foot-icon"><ShieldCheck :size="16"/></span><span>使用原有数据</span></div></article>
-        <article class="account-card second"><div class="card-top"><div class="avatar avatar-second"><span>✧</span></div><span class="badge" :class="{ online: status?.secondary === 1 }"><i></i>{{ status ? stateLabel(status.secondary) : '等待检查' }}</span></div><div class="card-index">02 / SECOND SPACE</div><h3>第二账号窗口</h3><p>为另一个账号留一片<br/>独立的小天地。</p><button class="launch" :disabled="busy || (status?.unknown ?? 0) > 0" @click="operation('launch_secondary')">{{ busy ? '正在处理…' : status?.secondary === 1 ? '第二窗口已运行' : '打开第二窗口' }} <ArrowUpRight :size="17"/></button></article>
+        <article class="account-card second"><div class="card-top"><div class="avatar avatar-second"><span>✧</span></div><span class="badge" :class="{ online: status?.secondary === 1 && status?.secondaryVisible !== false }"><i></i>{{ !status ? '等待检查' : status.secondary === 1 && status.secondaryVisible === false ? '后台运行' : stateLabel(status.secondary) }}</span></div><div class="card-index">02 / SECOND SPACE</div><h3>第二账号窗口</h3><p>为另一个账号留一片<br/>独立的小天地。</p><div class="card-actions"><button class="launch" :disabled="busy || (status?.unknown ?? 0) > 0" @click="operation('launch_secondary')">{{ busy ? '正在处理…' : status?.secondary === 1 && status?.secondaryVisible !== false ? '显示第二窗口' : '打开第二窗口' }} <ArrowUpRight :size="17"/></button><button v-if="status?.platform === 'Windows' && status.secondaryVisible" class="close-window" :disabled="busy || status.unknown > 0" @click="operation('close_secondary')">关闭窗口</button></div></article>
       </div>
       <div class="guide"><div class="guide-icon"><Stars :size="19"/></div><div><b>第一次使用？</b><p>先正常打开原窗口，再打开第二窗口，并在官方登录页选择另一个账号。</p></div><button @click="help = true">查看指南 <ArrowUpRight :size="15"/></button></div>
       <footer><span><i class="footer-dot"></i>{{ status ? `${status.platform} · 客户端 ${status.version || '已就绪'}` : busy ? '正在检查客户端…' : '等待检查客户端' }}</span><span>Made for your two worlds <span class="footer-star">✦</span></span></footer>

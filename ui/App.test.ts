@@ -24,4 +24,19 @@ describe('主界面', () => {
   await wrapper.get('input').setValue('C:\\Example\\Codex.exe'); await wrapper.findAll('button').find(b => b.text()==='保存设置')!.trigger('click'); await flushPromises();
   expect(invoke).toHaveBeenLastCalledWith('check_status',{clientPath:'C:\\Example\\Codex.exe'}); wrapper.unmount();
  });
+ it('后台运行时允许重新打开窗口', async () => {
+  invoke.mockResolvedValueOnce({...base,secondary:1,secondaryVisible:false});
+  const wrapper=mount(App); await flushPromises();
+  expect(wrapper.text()).toContain('后台运行');
+  expect(wrapper.findAll('button').find(b => b.text().includes('打开第二窗口'))).toBeDefined();
+  expect(wrapper.text()).not.toContain('关闭窗口'); wrapper.unmount();
+ });
+ it('通过关闭按钮发送关闭请求并更新状态', async () => {
+  invoke.mockResolvedValueOnce({...base,secondary:1,secondaryVisible:true});
+  const wrapper=mount(App); await flushPromises();
+  invoke.mockResolvedValueOnce({...base,secondary:1,secondaryVisible:false,message:'第二窗口已关闭'});
+  await wrapper.findAll('button').find(b=>b.text()==='关闭窗口')!.trigger('click'); await flushPromises();
+  expect(invoke).toHaveBeenCalledWith('close_secondary',{clientPath:null});
+  expect(wrapper.text()).toContain('后台运行'); expect(wrapper.text()).toContain('第二窗口已关闭'); wrapper.unmount();
+ });
 });

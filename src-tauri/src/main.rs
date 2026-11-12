@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 
 #[derive(Serialize, Deserialize)]
-struct Status { platform: String, version: String, default: u32, secondary: u32, unknown: u32, message: String }
+struct Status { platform: String, version: String, default: u32, secondary: u32, #[serde(rename = "secondaryVisible")] secondary_visible: Option<bool>, unknown: u32, message: String }
 struct OperationLock(Mutex<()>);
 
 #[cfg(target_os = "windows")]
@@ -24,6 +24,9 @@ fn perform(app: &tauri::AppHandle, action: &str, client_path: Option<String>) ->
     // extended-length path, which Tauri can return for bundled resources.
     let script = powershell_script_path(&script.to_string_lossy());
     let mut cmd = std::process::Command::new("powershell.exe");
+    // A launcher started from PowerShell 7 may inherit its incompatible module
+    // path. Let Windows PowerShell 5 construct its own default module path.
+    cmd.env_remove("PSModulePath");
     cmd.creation_flags(0x08000000).args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]).arg(script).arg("-Action").arg(action);
     if let Some(path) = client_path.filter(|s| !s.trim().is_empty()) { cmd.arg("-ClientPath").arg(path); }
     let output = cmd.output().map_err(|e| format!("启动系统检查失败：{e}"))?;
@@ -68,9 +71,17 @@ async fn launch_secondary(app: tauri::AppHandle, state: State<'_, OperationLock>
     let _guard = state.0.try_lock().map_err(|_| "正在执行另一项操作，请稍候。".to_string())?;
     perform(&app, "launch", client_path)
 }
+#[tauri::command]
+async fn close_secondary(app: tauri::AppHandle, state: State<'_, OperationLock>, client_path: Option<String>) -> Result<Status, String> {
+    let _guard = state.0.try_lock().map_err(|_| "正在执行另一项操作，请稍候。".to_string())?;
+    #[cfg(not(target_os = "windows"))]
+    { let _ = (app, client_path); Err("此操作目前仅支持 Windows，请在第二窗口中关闭。".into()) }
+    #[cfg(target_os = "windows")]
+    { perform(&app, "close", client_path) }
+}
 fn main() {
     tauri::Builder::default().manage(OperationLock(Mutex::new(())))
-        .invoke_handler(tauri::generate_handler![check_status, launch_secondary])
+        .invoke_handler(tauri::generate_handler![check_status, launch_secondary, close_secondary])
         .run(tauri::generate_context!()).expect("运行 DualChatGPT 失败");
 }
 
@@ -156,6 +167,6 @@ mod macos {
                 message="第二窗口进程已启动。请在官方窗口登录并核对账号。".into();
             }
         }
-        Ok(Status{platform:"macOS".into(),version,default:a,secondary:b,unknown:u,message})
+        Ok(Status{platform:"macOS".into(),version,default:a,secondary:b,secondary_visible:None,unknown:u,message})
     }
 }

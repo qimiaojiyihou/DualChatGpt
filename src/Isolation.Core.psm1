@@ -167,7 +167,12 @@ function Assert-ProfileConfig {
     $configPath = Join-Path $Paths.Codex 'config.toml'
     $actual = (Get-Content -LiteralPath $configPath -Raw).Replace("`r`n","`n")
     $expected = Get-IsolationConfig $Paths
-    if ($actual -cne $expected) {
+    # The client appends plugin and marketplace tables after its first launch.
+    # Keep the exact isolation settings at the start and allow only table-scoped
+    # additions after them, never additional top-level settings.
+    $suffix = if ($actual.StartsWith($expected,[StringComparison]::Ordinal)) { $actual.Substring($expected.Length) } else { $null }
+    $validSuffix = $null -ne $suffix -and ($suffix -match '^\s*$' -or $suffix -match '(?s)\A(?:\s|#[^\r\n]*(?:\r?\n|$))*\[')
+    if (-not $validSuffix) {
         throw "窗口 $($Paths.Profile) 的隔离配置已被修改。启动已阻止，原文件已保留。请检查 $configPath"
     }
 }
