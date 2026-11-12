@@ -1,0 +1,26 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
+      - run: npm run tauri build -- --no-bundle
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tests/Test-Launcher.ps1
+          ./probe/Test-Probe.ps1
+          ./probe/Test-Diagnostics.ps1

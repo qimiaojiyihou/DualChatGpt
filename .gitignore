@@ -1,0 +1,11 @@
+# Local evidence and private session data
+验证结果*.json
+进程诊断*.json
+*.log
+profiles/
+auth.json
+
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
