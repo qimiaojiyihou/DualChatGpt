@@ -158,9 +158,30 @@ function Assert-ProfileConfig {
     foreach ($dir in @($Paths.Base,$Paths.Electron,$Paths.Codex,$Paths.Sqlite,$Paths.Temp,$Paths.Work)) {
         Assert-PlainPath $dir | Out-Null
     }
-    # State files may be created by the client. Reject directory junctions anywhere in the profile.
+    # The client maintains plugin cache/latest junctions to sibling version
+    # directories. All other reparse points remain blocked.
+    $cacheRoot = [IO.Path]::GetFullPath((Join-Path $Paths.Codex 'plugins\cache')).TrimEnd('\')
     foreach ($item in Get-ChildItem -LiteralPath $Paths.Base -Force -Recurse -ErrorAction Stop) {
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $linkPath = [IO.Path]::GetFullPath($item.FullName)
+            $relative = if ($linkPath.StartsWith($cacheRoot + '\',[StringComparison]::OrdinalIgnoreCase)) { $linkPath.Substring($cacheRoot.Length + 1) } else { '' }
+            $parts = @($relative -split '\\')
+            $allowed = $false
+            if ($parts.Count -eq 3 -and $parts[0] -and $parts[1] -and $parts[2] -ieq 'latest' -and $item.LinkType -eq 'Junction') {
+                $targets = @($item.Target)
+                if ($targets.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace($targets[0])) {
+                    $parent = [IO.Path]::GetDirectoryName($linkPath)
+                    $target = [IO.Path]::GetFullPath($targets[0])
+                    $targetParent = [IO.Path]::GetDirectoryName($target.TrimEnd('\'))
+                    if ([string]::Equals($parent,$targetParent,[StringComparison]::OrdinalIgnoreCase) -and
+                        -not [string]::Equals($linkPath,$target,[StringComparison]::OrdinalIgnoreCase) -and
+                        (Test-Path -LiteralPath $target -PathType Container)) {
+                        Assert-PlainPath $target | Out-Null
+                        $allowed = $true
+                    }
+                }
+            }
+            if ($allowed) { continue }
             throw "配置中出现链接，需要人工检查：$($item.FullName)"
         }
     }
@@ -169,9 +190,10 @@ function Assert-ProfileConfig {
     $expected = Get-IsolationConfig $Paths
     # The client appends plugin and marketplace tables after its first launch.
     # Keep the exact isolation settings at the start and allow only table-scoped
-    # additions after them, never additional top-level settings.
+    # additions after them. The desktop client also maintains a single-line
+    # top-level notify array; other top-level settings remain blocked.
     $suffix = if ($actual.StartsWith($expected,[StringComparison]::Ordinal)) { $actual.Substring($expected.Length) } else { $null }
-    $validSuffix = $null -ne $suffix -and ($suffix -match '^\s*$' -or $suffix -match '(?s)\A(?:\s|#[^\r\n]*(?:\r?\n|$))*\[')
+    $validSuffix = $null -ne $suffix -and $suffix -match '(?m)\A(?:[ \t]*\r?\n|[ \t]*#[^\r\n]*(?:\r?\n|$)|[ \t]*notify[ \t]*=[ \t]*\[[^\r\n]*\][ \t]*(?:#[^\r\n]*)?(?:\r?\n|$))*[ \t]*(?:\[|\z)'
     if (-not $validSuffix) {
         throw "窗口 $($Paths.Profile) 的隔离配置已被修改。启动已阻止，原文件已保留。请检查 $configPath"
     }
